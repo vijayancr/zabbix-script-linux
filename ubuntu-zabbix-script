@@ -1,0 +1,82 @@
+#!/bin/bash
+
+set -e
+
+ZABBIX_IPS="192.168.1.2,172.16.103.23"
+REPO_PKG="zabbix-release_7.0-2+ubuntu24.04_all.deb"
+REPO_URL="https://repo.zabbix.com/zabbix/7.0/ubuntu/pool/main/z/zabbix-release/${REPO_PKG}"
+
+echo "=================================================="
+echo "ZABBIX AGENT CLEAN REINSTALLATION SCRIPT."
+echo "=================================================="
+echo
+
+read -p "This will completely remove Zabbix and reinstall it. Continue? (yes/no): " CONFIRM
+if [[ "$CONFIRM" != "yes" ]]; then
+    echo "Operation cancelled by user."
+    exit 1
+fi
+
+echo
+echo "Stopping Zabbix agent if running..."
+systemctl stop zabbix-agent 2>/dev/null || true
+
+echo "Removing Zabbix packages..."
+apt purge -y zabbix-agent zabbix-release
+apt autoremove -y
+
+echo "Removing leftover files..."
+rm -rf /etc/zabbix /var/log/zabbix /var/lib/zabbix
+rm -f /etc/apt/sources.list.d/zabbix*
+
+echo
+echo "Zabbix removal completed successfully."
+echo
+
+read -p "Do you want to install Zabbix Agent again? (yes/no): " INSTALL_CONFIRM
+if [[ "$INSTALL_CONFIRM" != "yes" ]]; then
+    echo "Installation skipped."
+    exit 0
+fi
+
+echo
+echo "Updating system..."
+apt update
+
+echo "Adding Zabbix repository..."
+wget -q ${REPO_URL}
+dpkg -i ${REPO_PKG}
+apt update
+
+echo "Installing Zabbix agent..."
+apt install -y zabbix-agent
+
+echo "Updating Zabbix agent configuration..."
+sed -i \
+-e "s/^Server=.*/Server=${ZABBIX_IPS}/" \
+-e "s/^ServerActive=.*/ServerActive=${ZABBIX_IPS}/" \
+/etc/zabbix/zabbix_agentd.conf
+
+echo "Enabling and restarting Zabbix agent..."
+systemctl enable zabbix-agent
+systemctl restart zabbix-agent
+
+echo
+echo "================ VERIFICATION ====================="
+
+echo
+echo "Installed Zabbix packages:"
+dpkg -l | grep zabbix || echo "No Zabbix packages found."
+
+echo
+echo "Zabbix Agent configuration:"
+grep -E 'Server=|ServerActive=' /etc/zabbix/zabbix_agentd.conf
+
+echo
+echo "Zabbix Agent service status:"
+systemctl status zabbix-agent --no-pager
+
+echo
+echo "=================================================="
+echo "Zabbix reinstallation completed successfully."
+echo "=================================================="
