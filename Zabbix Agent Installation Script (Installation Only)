@@ -1,0 +1,70 @@
+#!/bin/bash
+
+set -e
+
+ZABBIX_IPS="192.168.1.2,172.16.103.23"
+REPO_PKG="zabbix-release_7.0-2+ubuntu24.04_all.deb"
+REPO_URL="https://repo.zabbix.com/zabbix/7.0/ubuntu/pool/main/z/zabbix-release/${REPO_PKG}"
+
+echo "=================================================="
+echo "ZABBIX AGENT INSTALLATION SCRIPT"
+echo "=================================================="
+echo
+
+read -p "This will install Zabbix Agent and configure it. Continue? (yes/no): " CONFIRM
+if [[ "$CONFIRM" != "yes" ]]; then
+    echo "Installation cancelled by user."
+    exit 1
+fi
+
+echo
+echo "Updating system package list..."
+apt update
+
+if ! dpkg -l | grep -q zabbix-release; then
+    echo "Adding Zabbix repository..."
+    wget -q ${REPO_URL}
+    dpkg -i ${REPO_PKG}
+    apt update
+else
+    echo "Zabbix repository already present."
+fi
+
+if ! dpkg -l | grep -q zabbix-agent; then
+    echo "Installing Zabbix agent..."
+    apt install -y zabbix-agent
+else
+    echo "Zabbix agent is already installed."
+fi
+
+echo
+echo "Updating Zabbix agent configuration..."
+sed -i \
+-e "s/^Server=.*/Server=${ZABBIX_IPS}/" \
+-e "s/^ServerActive=.*/ServerActive=${ZABBIX_IPS}/" \
+/etc/zabbix/zabbix_agentd.conf
+
+echo
+echo "Enabling and restarting Zabbix agent..."
+systemctl enable zabbix-agent
+systemctl restart zabbix-agent
+
+echo
+echo "================ VERIFICATION ====================="
+
+echo
+echo "Installed Zabbix packages:"
+dpkg -l | grep zabbix || echo "No Zabbix packages found."
+
+echo
+echo "Zabbix Agent configuration:"
+grep -E 'Server=|ServerActive=' /etc/zabbix/zabbix_agentd.conf
+
+echo
+echo "Zabbix Agent service status:"
+systemctl status zabbix-agent --no-pager
+
+echo
+echo "=================================================="
+echo "Zabbix agent installation and configuration completed successfully."
+echo "=================================================="
