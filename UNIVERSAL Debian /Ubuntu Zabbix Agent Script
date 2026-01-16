@@ -1,0 +1,52 @@
+#!/bin/bash
+set -e
+
+ZABBIX_IPS="192.168.1.2,172.16.103.23"
+
+# Detect OS
+. /etc/os-release
+OS_ID=$ID
+OS_VER=$VERSION_ID
+
+echo "Detected OS: $OS_ID $OS_VER"
+
+# Stop agent
+systemctl stop zabbix-agent 2>/dev/null || true
+
+# Remove packages
+apt purge -y zabbix-agent zabbix-release || true
+apt autoremove -y
+
+# Cleanup
+rm -rf /etc/zabbix /var/log/zabbix /var/lib/zabbix
+rm -f /etc/apt/sources.list.d/zabbix*
+
+# Select repo package
+if [[ "$OS_ID" == "ubuntu" ]]; then
+    REPO_PKG="zabbix-release_7.0-2+ubuntu${OS_VER}_all.deb"
+    REPO_URL="https://repo.zabbix.com/zabbix/7.0/ubuntu/pool/main/z/zabbix-release/${REPO_PKG}"
+elif [[ "$OS_ID" == "debian" ]]; then
+    REPO_PKG="zabbix-release_7.0-2+debian${OS_VER}_all.deb"
+    REPO_URL="https://repo.zabbix.com/zabbix/7.0/debian/pool/main/z/zabbix-release/${REPO_PKG}"
+else
+    echo "Unsupported OS"
+    exit 1
+fi
+
+# Install repo
+apt update
+wget -q ${REPO_URL}
+dpkg -i ${REPO_PKG}
+apt update
+
+# Install agent
+apt install -y zabbix-agent
+
+# Configure agent
+sed -i "s/^Server=.*/Server=${ZABBIX_IPS}/" /etc/zabbix/zabbix_agentd.conf
+sed -i "s/^ServerActive=.*/ServerActive=${ZABBIX_IPS}/" /etc/zabbix/zabbix_agentd.conf
+
+# Start agent
+systemctl enable --now zabbix-agent
+
+systemctl status zabbix-agent --no-pager
